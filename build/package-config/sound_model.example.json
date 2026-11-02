@@ -1,0 +1,11 @@
+{
+  "BASE_URL": "https://ttspro.xivcdn.com",
+  "API_ENDPOINT": "/tts/v1",
+  "API_KEY": "",
+  "OUTPUT_FORMAT": "audio-24khz-48kbitrate-mono-mp3",
+  "STORED_FILEPATH": "./cache",
+  "VOICE": "zh-CN-XiaomoNeural",
+  "VOICE_STYLE": "gentle",
+  "SPEED": 5,
+  "PITCH": 0
+}

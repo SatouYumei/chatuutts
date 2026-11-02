@@ -1,0 +1,13 @@
+{
+  "active_id": "7e2f653a85d9",
+  "profiles": [
+    {
+      "id": "7e2f653a85d9",
+      "name": "默认",
+      "VOICE": "zh-CN-XiaomoNeural",
+      "VOICE_STYLE": "gentle",
+      "SPEED": 5,
+      "PITCH": 0
+    }
+  ]
+}

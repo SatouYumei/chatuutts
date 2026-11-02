@@ -1,0 +1,7 @@
+requests>=2.31
+pygame>=2.5
+pynput>=1.7
+sounddevice>=0.4
+miniaudio>=1.59
+pillow>=10.0
+sherpa-onnx>=1.12

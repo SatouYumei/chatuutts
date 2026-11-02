@@ -1,0 +1,22 @@
+# 打包产物
+dist/
+build/*
+!build/package-config/
+
+# 带密钥的声音配置，只提交 sound_model.example.json
+build/package-config/sound_model.json
+
+# 本机配置、缓存、快捷方式
+config/
+cache/
+*.lnk
+
+# 本地语音模型（约 206 MB，按 README 下载）
+models/
+
+# 开发截图
+preview/
+
+__pycache__/
+*.pyc
+*.tmp
