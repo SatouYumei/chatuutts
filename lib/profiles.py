@@ -129,6 +129,8 @@ DEFAULT_UI = {
     "speaker": "",
     "virtual_mic": False,
     "virtual_mic_device": "",
+    "check_updates": True,
+    "skipped_version": "",
 }
 
 
@@ -148,6 +150,8 @@ def load_ui(path):
     data["speaker"] = str(data.get("speaker") or "")
     data["virtual_mic_device"] = str(data.get("virtual_mic_device") or "")
     data["virtual_mic"] = bool(data.get("virtual_mic"))
+    data["check_updates"] = bool(data.get("check_updates"))
+    data["skipped_version"] = str(data.get("skipped_version") or "")
     return data
 
 

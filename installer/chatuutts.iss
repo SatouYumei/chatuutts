@@ -1,7 +1,7 @@
 ﻿; CHATUUTTS 安装包。不包含 VB-CABLE 驱动。
 
 #define AppName "CHATUUTTS"
-#define AppVersion "1.0.13"
+#define AppVersion "1.0.14"
 #define AppPublisher "CHATUUTTS"
 #define AppExe "CHATUUTTS.exe"
 
@@ -47,6 +47,8 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; WorkingDir: "{app
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "启动 CHATUUTTS"; Flags: nowait postinstall skipifsilent
+; 程序内更新是静默安装，装完自动把程序打开
+Filename: "{app}\{#AppExe}"; WorkingDir: "{app}"; Flags: nowait; Check: WizardSilent
 
 [Code]
 function CableInstalled: Boolean;
@@ -63,7 +65,8 @@ function InitializeSetup: Boolean;
 var
   ErrorCode: Integer;
 begin
-  if CableInstalled then
+  { 程序内更新走静默安装，用户早已装过，不再拦着检查驱动 }
+  if WizardSilent or CableInstalled then
   begin
     Result := True;
     Exit;

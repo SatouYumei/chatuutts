@@ -1,6 +1,6 @@
 # CHATUUTTS
 
-当前版本：**1.0.13**（2026-11-02）
+当前版本：**1.0.14**（2026-11-05）
 
 CHATUUTTS 是一个 Windows 桌面上的中文文字转语音小工具。输入文字或按快捷键，它就会用选好的声音读出来；还可以把声音送进虚拟麦克风，让游戏和语音软件里的人听到。
 
@@ -14,12 +14,13 @@ CHATUUTTS 是一个 Windows 桌面上的中文文字转语音小工具。输入�
 - **读音修正**：固定搭配和词语替换，让缩写、谐音读得对。
 - **缓存**：说过的话会被缓存，再说时立即播放。
 - **主题**：15 套配色，紧凑和展开两种窗口模式。
+- **自动更新**：启动时检查新版本，在程序里一键下载、校验并安装。
 
 ## 安装
 
 1. 先安装 VB-CABLE 驱动：<https://vb-audio.com/Cable/>，装完重启电脑。安装包不附带这个驱动。
-2. 运行 `CHATUUTTS-Setup-1.0.13.exe`。默认装到 `%LOCALAPPDATA%\CHATUUTTS`，不需要管理员权限。
-3. 升级时直接覆盖安装，原有的配置和声音档案都会保留。
+2. 从 [Releases](https://github.com/SatouYumei/chatuutts/releases/latest) 下载并运行 `CHATUUTTS-Setup-1.0.14.exe`。默认装到 `%LOCALAPPDATA%\CHATUUTTS`，不需要管理员权限。
+3. 1.0.14 起可以在程序里直接更新；更早的版本需要手动覆盖安装一次。原有的配置和声音档案都会保留。
 
 ## 使用
 
@@ -33,6 +34,8 @@ CHATUUTTS 是一个 Windows 桌面上的中文文字转语音小工具。输入�
 
 **虚拟麦克风**：在音频设置里打开虚拟麦克风，然后在游戏或语音软件里把麦克风选成 `chatuu-tts`。扬声器可以选「只输出」，这样本机不出声，只有对方能听到。
 
+**更新**：有新版本时会弹出提示，点「立即更新」即可，装完自动重新打开。在窗口上点右键可以手动「检查更新」，或者关掉「启动时检查更新」，关掉后程序启动时不会联网检查。
+
 ## 配置文件
 
 都在安装目录的 `config` 文件夹里，可以直接用文本编辑器改：
@@ -44,12 +47,13 @@ CHATUUTTS 是一个 Windows 桌面上的中文文字转语音小工具。输入�
 | shortcut_key.json | 快捷发言 |
 | fixed_collocation.json | 整句替换，如 `?` → `啊？` |
 | word_replacement.json | 词语替换，如 `cod` → `C O D`，支持正则 |
-| ui_state.json | 主题、窗口位置、扬声器和虚拟麦克风设置 |
+| ui_state.json | 主题、窗口位置、扬声器和虚拟麦克风设置、是否检查更新 |
 
 ## 更新说明
 
 每个版本的详细改动在 `docs\changelog` 文件夹里：
 
+- [1.0.14](docs/changelog/1.0.14.md)：更新提示与程序内一键更新
 - [1.0.13](docs/changelog/1.0.13.md)：本地离线语音
 - [1.0.12](docs/changelog/1.0.12.md)：按顺序播放、连接复用、缓存更安全、默认快捷键调整
 
@@ -78,3 +82,14 @@ CHATUUTTS 本身不提供语音合成服务，两种语音分别来自：
 3. 下载本地模型 [kokoro-int8-multi-lang-v1_1.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2)，解压到 `models/kokoro-int8-multi-lang-v1_1/`。
 4. 运行 `python app.py`，或双击 `CHATUUTTS.vbs`。
 5. 打包：在 `build/package-config/` 里也放一份填好密钥的 `sound_model.json`，执行 `python -m PyInstaller --noconfirm chatuutts.spec`，再用 Inno Setup 6 编译 `installer/chatuutts.iss`。
+
+### 发布新版本
+
+程序内更新依赖固定的发布格式，每次发版按这个顺序：
+
+1. 同时修改 `lib/version.py` 的 `VERSION` 和 `installer/chatuutts.iss` 的 `AppVersion`。
+2. 新增 `docs/changelog/<版本号>.md`，并更新本 README 的版本号和更新说明列表。
+3. 打包出 `dist/CHATUUTTS-Setup-<版本号>.exe`，再生成同名的 `.sha256` 校验文件。
+4. 提交、推送，然后发布标签为 `v<版本号>` 的 Release，附件里要有安装包和 `.sha256` 文件。
+
+程序通过 `releases/latest` 的跳转找到新版本，按上面的命名下载安装包和校验文件，从对应标签下读取更新说明。全程不调用 api.github.com，所以不受未登录接口每小时 60 次的限制。

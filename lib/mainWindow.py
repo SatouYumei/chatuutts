@@ -5,6 +5,7 @@ import re
 import threading
 import time
 import tkinter as tk
+import webbrowser
 
 from lib.paths import app_dir, resource_dir
 from lib.audioOutput import (
@@ -16,6 +17,8 @@ from lib.audioOutput import (
 )
 from lib.localTts import is_local_voice, warm_up
 from lib.ttsEngine import cache_size, clear_cache, format_cache_size
+from lib.updater import UpdateCancelled, can_install, check_for_update, download, launch_installer
+from lib.version import VERSION
 from lib.virtualCable import (
     MISSING_DRIVER,
     device_node_exists,
@@ -87,6 +90,10 @@ class ChatUUTTSApp(tk.Tk):
         self._mic_capture_name = ""
         self._virtual_busy = False
         self._ready = False
+        self._update_info = None
+        self._update_checking = False
+        self._update_dialog = None
+        self.update_btn = None
         try:
             configure_output(
                 self.ui.get("speaker") or "",
@@ -112,6 +119,8 @@ class ChatUUTTSApp(tk.Tk):
         if self.ui.get("hotkeys_enabled"):
             self.hotkey_manager.start()
         threading.Thread(target=self._quiet_hide_speaker, name="tts-hide-speaker", daemon=True).start()
+        if self.ui.get("check_updates"):
+            self.after(4000, lambda: self.check_updates(manual=False))
 
     def _track(self, dialog):
         self._dialogs.append(dialog)
@@ -154,6 +163,13 @@ class ChatUUTTSApp(tk.Tk):
             menu.add_command(label="展开", command=lambda: self.set_mode("expanded"))
         else:
             menu.add_command(label="缩小", command=lambda: self.set_mode("compact"))
+        menu.add_separator()
+        if self._update_info:
+            menu.add_command(label=f"更新到 {self._update_info['version']}", command=self.open_update)
+        menu.add_command(label="检查更新", command=lambda: self.check_updates(manual=True))
+        self._check_updates_var = tk.BooleanVar(self, value=bool(self.ui.get("check_updates")))
+        menu.add_checkbutton(label="启动时检查更新", variable=self._check_updates_var, command=self.toggle_check_updates)
+        menu.add_command(label=f"版本 {VERSION}", state="disabled")
         menu.add_separator()
         menu.add_command(label="退出", command=self.on_close)
         try:
@@ -518,6 +534,10 @@ class ChatUUTTSApp(tk.Tk):
         tools.pack(side="bottom", fill="x", padx=24, pady=(0, 4))
         self._outline(tools, "编辑声音", lambda: self.open_editor(is_new=False)).pack(side="left", padx=(0, 8))
         self._outline(tools, "快捷发言", self.open_shortcuts).pack(side="left")
+        self._tools = tools
+        self.update_btn = None
+        if self._update_info:
+            self._show_update_button()
         card.pack(fill="both", expand=True, padx=24, pady=(0, 12))
 
     def _outline(self, parent, text, command):
@@ -1407,6 +1427,89 @@ class ChatUUTTSApp(tk.Tk):
         except tk.TclError:
             self._virtual_busy = False
 
+    def check_updates(self, manual=False):
+        """后台问一次 GitHub。手动检查时，没有更新或出错也要告诉用户。"""
+        if self._update_checking:
+            return
+        self._update_checking = True
+
+        def work():
+            info, failed = None, False
+            try:
+                info = check_for_update()
+            except Exception as exc:
+                print(f"Update check failed: {exc}")
+                failed = True
+            try:
+                self.after(0, lambda: self._on_update_checked(info, failed, manual))
+            except (tk.TclError, RuntimeError):
+                pass
+
+        threading.Thread(target=work, name="tts-update-check", daemon=True).start()
+
+    def _on_update_checked(self, info, failed, manual):
+        self._update_checking = False
+        try:
+            if not self.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        if failed:
+            if manual:
+                self._open_update_dialog(None, "检查更新失败，请检查网络后再试。")
+            return
+        if info is None:
+            if manual:
+                self._open_update_dialog(None, f"已经是最新版本 {VERSION}。")
+            return
+        if not manual and info["version"] == self.ui.get("skipped_version"):
+            return
+        self._update_info = info
+        self._show_update_button()
+        self._open_update_dialog(info)
+
+    def _show_update_button(self):
+        if self.mode != "expanded" or self.update_btn is not None or not self._update_info:
+            return
+        tools = getattr(self, "_tools", None)
+        if tools is None or not tools.winfo_exists():
+            return
+        self.update_btn = self._outline(tools, f"更新到 {self._update_info['version']}", self.open_update)
+        self.update_btn.pack(side="left", padx=(8, 0))
+
+    def open_update(self):
+        if self._update_info:
+            self._open_update_dialog(self._update_info)
+
+    def _open_update_dialog(self, info, message=""):
+        dialog = self._update_dialog
+        if dialog is not None:
+            try:
+                if dialog.winfo_exists():
+                    dialog._raise_above()
+                    return
+            except tk.TclError:
+                pass
+        try:
+            self._update_dialog = UpdateDialog(self, info, message)
+        except Exception as exc:
+            print(f"Update dialog failed: {exc}")
+
+    def skip_version(self, version):
+        self.ui["skipped_version"] = version
+        save_ui(self.ui_path, self.ui)
+        self._update_info = None
+        if self.update_btn is not None:
+            try:
+                self.update_btn.destroy()
+            except tk.TclError:
+                pass
+            self.update_btn = None
+
+    def toggle_check_updates(self):
+        self.ui["check_updates"] = not bool(self.ui.get("check_updates"))
+        save_ui(self.ui_path, self.ui)
+
     def open_themes(self):
         for dialog in self._dialogs:
             if isinstance(dialog, ThemePicker) and dialog.winfo_exists():
@@ -2086,3 +2189,182 @@ class ThemePicker(_Dialog):
                 )
         for column in range(4):
             grid.grid_columnconfigure(column, weight=1)
+
+
+def _plain_notes(markdown):
+    """更新说明是 Markdown，去掉标记符号再放进文本框。"""
+    lines = []
+    for line in str(markdown or "").splitlines():
+        stripped = line.strip()
+        if re.fullmatch(r"\|?[\s:|-]+\|?", stripped) and "-" in stripped:
+            continue
+        if stripped.startswith("|"):
+            line = " · ".join(cell.strip() for cell in stripped.strip("|").split("|"))
+        line = re.sub(r"^#+\s*", "", line)
+        lines.append(line.replace("**", "").replace("`", ""))
+    return "\n".join(lines).strip()
+
+
+class UpdateDialog(_Dialog):
+    """新版本提示。没有 info 时只显示一句结果。"""
+
+    def __init__(self, app, info=None, message=""):
+        super().__init__(app, "检查更新", 480, 520 if info else 200)
+        self.info = info
+        self.cancel = threading.Event()
+        self.busy = False
+        self._percent = -1
+        theme = self.theme
+        buttons = tk.Frame(self.body, bg=theme["bg"])
+        buttons.pack(side="bottom", fill="x", padx=20, pady=12)
+        if info is None:
+            tk.Label(
+                self.body,
+                text=message,
+                bg=theme["bg"],
+                fg=theme["text"],
+                font=font(12),
+                anchor="w",
+                justify="left",
+                wraplength=430,
+            ).pack(fill="x", padx=20, pady=(24, 0))
+            self._button(buttons, "确定", self.close, primary=True).pack(side="right")
+            return
+
+        tk.Label(
+            self.body,
+            text=f"发现新版本 {info['version']}",
+            bg=theme["bg"],
+            fg=theme["text"],
+            font=font(16, "bold"),
+            anchor="w",
+        ).pack(fill="x", padx=20, pady=(16, 0))
+        tk.Label(
+            self.body,
+            text=f"当前版本 {VERSION}",
+            bg=theme["bg"],
+            fg=theme["muted"],
+            font=font(10),
+            anchor="w",
+        ).pack(fill="x", padx=20, pady=(2, 0))
+
+        self.status = tk.Label(self.body, text="", bg=theme["bg"], fg=theme["muted"], font=font(10), anchor="w")
+        self.status.pack(side="bottom", fill="x", padx=20)
+        self.bar = tk.Canvas(self.body, height=6, bg=theme["input"], highlightthickness=0, bd=0)
+
+        notes = tk.Text(
+            self.body,
+            wrap="word",
+            bd=0,
+            bg=theme["input"],
+            fg=theme["text"],
+            font=font(11),
+            highlightthickness=0,
+            padx=12,
+            pady=8,
+            height=10,
+        )
+        notes.insert("1.0", _plain_notes(info.get("notes")) or "这个版本没有附带更新说明。")
+        notes.configure(state="disabled")
+        notes.pack(fill="both", expand=True, padx=20, pady=(12, 8))
+
+        self.update_label = self._button(buttons, "立即更新" if can_install() else "打开下载页", self._update, primary=True)
+        self.update_label.pack(side="right")
+        self._button(buttons, "稍后", self.close).pack(side="right", padx=(0, 8))
+        self._button(buttons, "跳过这个版本", self._skip).pack(side="left")
+
+    def _button(self, parent, text, command, primary=False):
+        theme = self.theme
+        label = tk.Label(
+            parent,
+            text=text,
+            bg=theme["accent"] if primary else theme["card"],
+            fg=theme["accent_text"] if primary else theme["text"],
+            font=font(12, "bold" if primary else "normal"),
+            padx=14,
+            pady=6,
+            cursor="hand2",
+        )
+        label.bind("<Button-1>", lambda _event: command())
+        return label
+
+    def _skip(self):
+        if self.busy:
+            return
+        self.app.skip_version(self.info["version"])
+        self.close()
+
+    def _update(self):
+        if self.busy:
+            return
+        if not can_install():
+            webbrowser.open(self.info["page"])
+            self.close()
+            return
+        self.busy = True
+        self._percent = -1
+        self.update_label.configure(text="下载中…")
+        self.status.configure(fg=self.theme["muted"], text="正在下载安装包…")
+        self.bar.pack(side="bottom", fill="x", padx=20, pady=(0, 6), before=self.status)
+
+        def progress(done, total):
+            percent = int(done * 100 / total) if total else -1
+            if percent == self._percent:
+                return
+            self._percent = percent
+            try:
+                self.after(0, lambda: self._show_progress(done, total))
+            except (tk.TclError, RuntimeError):
+                pass
+
+        def work():
+            try:
+                path = download(self.info, progress, self.cancel)
+            except UpdateCancelled:
+                return
+            except Exception as exc:
+                message = str(exc) or "下载失败"
+                try:
+                    self.after(0, lambda: self._failed(message))
+                except (tk.TclError, RuntimeError):
+                    pass
+                return
+            try:
+                self.after(0, lambda: self._install(path))
+            except (tk.TclError, RuntimeError):
+                pass
+
+        threading.Thread(target=work, name="tts-update-download", daemon=True).start()
+
+    def _show_progress(self, done, total):
+        if not self.winfo_exists():
+            return
+        width = max(1, self.bar.winfo_width())
+        self.bar.delete("all")
+        if total:
+            self.bar.create_rectangle(0, 0, width * done / total, 6, fill=self.theme["accent"], outline="")
+            self.status.configure(text=f"正在下载 {done / 1048576:.0f} / {total / 1048576:.0f} MB")
+        else:
+            self.status.configure(text=f"正在下载 {done / 1048576:.0f} MB")
+
+    def _failed(self, message):
+        if not self.winfo_exists():
+            return
+        self.busy = False
+        self.update_label.configure(text="重试")
+        self.status.configure(fg=self.theme["danger"], text=message)
+
+    def _install(self, path):
+        if not self.winfo_exists() or self.cancel.is_set():
+            return
+        self.status.configure(text="正在安装，完成后会自动重新打开…")
+        try:
+            launch_installer(path)
+        except OSError as exc:
+            self._failed(f"无法启动安装程序：{exc}")
+            return
+        self.app.after(500, self.app.on_close)
+
+    def close(self):
+        self.cancel.set()
+        super().close()

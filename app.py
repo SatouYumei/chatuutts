@@ -43,7 +43,7 @@ def ensure_config(root):
         return
     target.mkdir(parents=True, exist_ok=True)
     for item in template.iterdir():
-        if not item.is_file():
+        if not item.is_file() or item.name.endswith(".example.json"):
             continue
         dest = target / item.name
         if dest.exists():
